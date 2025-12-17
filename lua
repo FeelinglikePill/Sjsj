@@ -706,29 +706,57 @@ RunService.RenderStepped:Connect(function()
 end)
 
 ------------------------------------------------
--- TP Arrest Criminals
+-- TP Arrest Criminals (Smart)
 ------------------------------------------------
 
 local TPArrestCriminals = false
-local TP_DISTANCE = 4      -- ระยะ TP เข้าไปใกล้
-local TP_DELAY = 0.35      -- หน่วงกันเตะ / กันแลค
+local Arrested = {} -- เก็บคนที่จับแล้ว
+
+local TP_DELAY = 0.4
+local UNDER_MAP_TIME = 3
+
+-- ตำแหน่งใต้แมพ (ปรับได้)
+local UNDER_MAP_CFRAME = CFrame.new(0, -500, 0)
 
 CombatTab:Toggle({
-    Title = "TP Arrest Criminals",
-    Description = "Teleport to Criminals & arrest",
+    Title = "Arrest aura",
+    Description = "TP arrest + ignore arrested",
     Default = false,
     Callback = function(v)
         TPArrestCriminals = v
+        if not v then
+            table.clear(Arrested)
+        end
     end
 })
 
+-- เช็คว่ามี Criminals ที่ยังไม่โดนจับไหม
+local function HasValidCriminal()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Team
+        and plr.Team.Name == "Criminals"
+        and not Arrested[plr]
+        and plr.Character
+        and plr.Character:FindFirstChild("HumanoidRootPart") then
+            return true
+        end
+    end
+    return false
+end
+
 task.spawn(function()
     while task.wait(TP_DELAY) do
-        if not TPArrestCriminals then continue end
+        if not TPArrestCriminals then break end
 
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
+
+        -- ถ้าไม่มี Criminals → ลงใต้แมพค้าง
+        if not HasValidCriminal() then
+            hrp.CFrame = UNDER_MAP_CFRAME
+            continue
+        end
 
         for _, plr in ipairs(Players:GetPlayers()) do
             if not TPArrestCriminals then break end
@@ -736,20 +764,34 @@ task.spawn(function()
             if plr ~= LocalPlayer
             and plr.Team
             and plr.Team.Name == "Criminals"
+            and not Arrested[plr]
             and plr.Character
             and plr.Character:FindFirstChild("HumanoidRootPart") then
 
                 local thrp = plr.Character.HumanoidRootPart
 
-                -- TP ไปด้านหลังเป้าหมาย
-                hrp.CFrame = thrp.CFrame * CFrame.new(0, 0, -TP_DISTANCE)
+                -- TP ไปจับ
+                hrp.CFrame = thrp.CFrame * CFrame.new(0, 0, -3)
                 task.wait(0.1)
 
-                -- Arrest
                 pcall(function()
                     ArrestRemote:InvokeServer(plr)
                 end)
+
+                -- มาร์คว่าจับแล้ว
+                Arrested[plr] = true
+
+                -- ลงใต้แมพ 3 วิ
+                hrp.CFrame = UNDER_MAP_CFRAME
+                task.wait(UNDER_MAP_TIME)
+
+                break -- ไปคนถัดไป
             end
         end
     end
+end)
+
+-- ล้างสถานะถ้าคนออกเกม
+Players.PlayerRemoving:Connect(function(plr)
+    Arrested[plr] = nil
 end)
